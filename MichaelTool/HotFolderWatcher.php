@@ -57,21 +57,21 @@ class HotFolderWatcher
     {
         if ($this->hasELP && $this->hasPSAA1) {
             $this->generateReport1();
-            $this->exportReport('Report1');
+            $this->exportReport('Report1', "RateRequest");
         }
 
         if ($this->hasELP && $this->hasPSAA2) {
             $this->generateReport2();
-            $this->exportReport('Report2');
+            $this->exportReport('Report2', "HITS");
         }
 
         if ($this->hasELP && $this->hasRate) {
             $this->generateReport3();
-            $this->exportReport('Report3');
+            $this->exportReport('Report3', "Analysis");
         }
     }
 
-    private function exportReport($table)
+    private function exportReport($table, $name)
     {
         $query = "SELECT * FROM $table";
         $statement = $this->pdo->prepare($query);
@@ -84,7 +84,7 @@ class HotFolderWatcher
 
         $header = array_keys($records[0]);
 
-        $fh = fopen($this->inputFolder.$table.".csv", "w");
+        $fh = fopen($this->inputFolder.$name.".csv", "w");
 
         if ($table === 'Report1') {
             fputcsv($fh, null);
@@ -242,14 +242,17 @@ class HotFolderWatcher
                     FROM Temp_ELP2 AS t1 JOIN Temp_PSAA2 AS t2
                     ON t1.`Entry Point` = t2.EPDeliveryZip;
                     
+                    UPDATE Report2
+                    SET `Latest Delivery/Appointment Date` = DATE(STR_TO_DATE(`Latest Delivery/Appointment Date`, '%m/%d/%Y'));
+                    
                     ALTER TABLE Report2
                     ADD COLUMN `Address #1` varchar(255) AFTER `Facility Name`,
                     ADD COLUMN `Address #2` varchar(255) AFTER `Address #1`,
                     ADD COLUMN City varchar(255) AFTER `Address #2`,
                     ADD COLUMN State varchar(255) AFTER City,
-                    ADD COLUMN `Earliest In-Home` varchar(255) AFTER `Sales Order Number`,
-                    ADD COLUMN `Latest In-Home` varchar(255) AFTER `Earliest In-Home`,
-                    ADD COLUMN `Earliest Delivery Date` varchar(255) AFTER `Latest In-Home`,
+                    ADD COLUMN `Earliest In-Home` DATE AFTER `Sales Order Number`,
+                    ADD COLUMN `Latest In-Home` DATE AFTER `Earliest In-Home`,
+                    ADD COLUMN `Earliest Delivery Date` DATE AFTER `Latest In-Home`,
                     ADD COLUMN `Latest Delivery/Appointment Time` varchar(255) AFTER `Latest Delivery/Appointment Date`,
                     ADD COLUMN `Version (Customer Ref#3)` varchar(255) AFTER `Mail Processing Category`,
                     ADD COLUMN Sacks int AFTER Skids,
@@ -262,7 +265,17 @@ class HotFolderWatcher
                     
                     UPDATE Report2, LOCkey
                     SET Report2.`USPS  / FAST Facility Key` = LOCkey.`Dropsite Key`
-                    WHERE SUBSTRING(Report2.`USPS  / FAST Facility Key`, 5) = SUBSTRING(LOCkey.`Dropsite Key`, 3);";
+                    WHERE SUBSTRING(Report2.`USPS  / FAST Facility Key`, 5) = SUBSTRING(LOCkey.`Dropsite Key`, 3);
+                    
+                    UPDATE Report2
+                    SET `Earliest Delivery Date` = `Latest Delivery/Appointment Date`;
+                    
+                    UPDATE Report2
+                    SET `Earliest In-Home` = DATE_ADD(`Latest Delivery/Appointment Date`, INTERVAL 2 DAY);
+                    
+                    UPDATE Report2
+                    SET `Latest In-Home` = DATE_ADD(`Latest Delivery/Appointment Date`, INTERVAL 4 DAY);
+        ";
 
         $result = $this->runQuery($query);
         if ($result)
@@ -290,7 +303,7 @@ class HotFolderWatcher
                     t1.`Copies`,
                     t1.`Tray Count`,
                     t1.`Postage Savings`,
-                    t2.`Net Charge` as `Freight Cost`,
+                    t2.`Total Charge` as `Freight Cost`,
                     t1.`Entry Postage`,
                     t1.`Local Postage`,
                     t1.`Net Savings`,
